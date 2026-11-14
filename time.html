@@ -13,6 +13,7 @@
     --screen-w: 1440;
     --screen-h: 3120;
     --w: min(100vw, calc(100vh * var(--screen-w) / var(--screen-h)));
+    --scale: 0.5;   /* 카운트다운 전체 크기 배율 (1 = 처음 크기) */
   }
   @supports (height: 100dvh) {
     :root { --w: min(100vw, calc(100dvh * var(--screen-w) / var(--screen-h))); }
@@ -39,19 +40,33 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: calc(var(--w) * 0.075);
+    gap: calc(var(--w) * 0.075 * var(--scale));
     padding-bottom: calc(var(--w) * 0.2);
     background: #000;
     color: #fff;
   }
 
+  /* --d: 숫자 한 칸의 너비, --dh: 숫자 한 칸의 높이 */
   .row {
+    --dh: calc(var(--d) * 100 / 56);
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: calc(var(--d) * 0.16);
   }
-  .row.days { --d: calc(var(--w) * 0.16); }
-  .row.hms  { --d: calc(var(--w) * 0.095); }
+  .row.days { --d: calc(var(--w) * 0.16 * var(--scale)); }
+  .row.hms  { --d: calc(var(--w) * 0.095 * var(--scale)); }
+
+  /* 남은 일수 옆의 "일": 숫자와 같은 높이. 글자 크기와 위치는 아래 스크립트(fitUnit)가 맞춘다. */
+  .unit {
+    display: block;
+    height: var(--dh);
+    margin-left: calc(var(--d) * 0.08);
+    overflow: visible;
+  }
+  .unit text {
+    fill: #fff;
+    font-weight: 700;
+  }
 
   .digits {
     display: flex;
@@ -61,7 +76,7 @@
 
   .digit, .colon {
     display: block;
-    height: calc(var(--d) * 100 / 56);
+    height: var(--dh);
   }
   .digit { width: var(--d); }
   .colon { width: calc(var(--d) * 22 / 56); }
@@ -69,14 +84,6 @@
   .seg { fill: #fff; opacity: 0; }
   .seg.on { opacity: 1; }
   .colon rect { fill: #fff; }
-
-  .label {
-    margin-top: calc(var(--w) * 0.022);
-    text-align: center;
-    font-size: calc(var(--w) * 0.032);
-    letter-spacing: 0.1em;
-    opacity: 0.7;
-  }
 
   /* 네이버 서버시간 동기화에 실패했을 때만 표시 */
   .notice {
@@ -94,10 +101,10 @@
 <body>
   <div class="wallpaper">
     <div class="row days">
-      <div class="group">
-        <div class="digits" id="days"></div>
-        <div class="label">일</div>
-      </div>
+      <div class="digits" id="days"></div>
+      <svg class="unit" id="unit" viewBox="0 0 100 100" role="img" aria-label="일">
+        <text x="0" y="88" font-size="100">일</text>
+      </svg>
     </div>
 
     <div class="row hms">
@@ -112,6 +119,10 @@
         <rect x="5.5" y="62" width="11" height="11"/>
       </svg>
       <div class="digits" id="seconds"></div>
+      <svg class="colon" viewBox="0 0 22 100" aria-hidden="true">
+        <rect x="5.5" y="89" width="11" height="11"/>
+      </svg>
+      <div class="digits" id="millis"></div>
     </div>
 
     <div class="notice" id="notice" hidden>네이버 서버시간 동기화 실패 · 기기 시간 기준</div>
@@ -212,7 +223,38 @@
   const showHours = createGroup(document.getElementById("hours"));
   const showMinutes = createGroup(document.getElementById("minutes"));
   const showSeconds = createGroup(document.getElementById("seconds"));
+  const showMillis = createGroup(document.getElementById("millis"));
   const noticeEl = document.getElementById("notice");
+
+  /* ───────── "일" 글자 크기 맞춤 ───────── */
+
+  // 글꼴마다 글자가 실제로 그려지는 높이가 다르다(휴대폰과 PC의 기본 글꼴도 다르다).
+  // 그려지는 높이를 직접 재어서, 어떤 글꼴에서도 "일"이 숫자와 정확히 같은 높이가 되게 한다.
+  function fitUnit() {
+    const svg = document.getElementById("unit");
+    const text = svg.querySelector("text");
+    const fontFamily = getComputedStyle(document.body).fontFamily;
+
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.font = `700 100px ${fontFamily}`;
+    const m = ctx.measureText(text.textContent);
+    const ascent = m.actualBoundingBoxAscent;     // 기준선 위로 그려지는 높이
+    const descent = m.actualBoundingBoxDescent;   // 기준선 아래로 그려지는 높이
+    const left = m.actualBoundingBoxLeft;
+    const right = m.actualBoundingBoxRight;
+    if (!(ascent + descent > 0) || !(left + right > 0)) return;   // 측정 불가: 기본값 유지
+
+    const k = 100 / (ascent + descent);   // 글자 높이를 숫자 높이(100)에 맞추는 배율
+    const width = (left + right) * k;
+    svg.setAttribute("viewBox", `0 0 ${width} 100`);
+    svg.style.width = `calc(var(--dh) * ${width / 100})`;
+    text.setAttribute("x", left * k);
+    text.setAttribute("y", ascent * k);
+    text.setAttribute("font-size", 100 * k);
+    text.style.fontFamily = fontFamily;
+  }
+
+  fitUnit();
 
   /* ───────── 네이버 서버시간 동기화 ───────── */
 
@@ -273,33 +315,41 @@
     // 동기화에 한 번도 성공하지 못했으면 기기 시간으로 표시하고 그 사실을 알린다.
     noticeEl.hidden = synced;
     document.documentElement.dataset.timeSource = synced ? "naver" : "device";
-    tick();
+    startTicking();
   }
 
   /* ───────── 카운트다운 표시 ───────── */
 
-  const pad2 = (n) => String(n).padStart(2, "0");
+  // 밀리초 자리가 계속 바뀌므로 화면을 1초에 약 30번 갱신한다.
+  const FRAME_INTERVAL = 33;
+
+  const pad = (n, width) => String(n).padStart(width, "0");
   let tickTimer = null;
 
   function tick() {
-    clearTimeout(tickTimer);
-    const remain = TARGET - (Date.now() + offset);
-    const total = Math.max(0, Math.floor(remain / 1000));
+    tickTimer = null;
+    const remain = Math.max(0, TARGET - (Date.now() + offset));   // 남은 시간 (ms)
 
-    showDays(String(Math.floor(total / 86400)));
-    showHours(pad2(Math.floor((total % 86400) / 3600)));
-    showMinutes(pad2(Math.floor((total % 3600) / 60)));
-    showSeconds(pad2(total % 60));
+    showDays(String(Math.floor(remain / 86400000)));
+    showHours(pad(Math.floor((remain % 86400000) / 3600000), 2));
+    showMinutes(pad(Math.floor((remain % 3600000) / 60000), 2));
+    showSeconds(pad(Math.floor((remain % 60000) / 1000), 2));
+    showMillis(pad(Math.floor(remain % 1000), 3));
 
-    if (remain <= 0) return;                             // 목표 시각 도달: 0에서 멈춤
-    tickTimer = setTimeout(tick, (remain % 1000) + 10);  // 다음 초가 바뀌는 순간에 맞춰 갱신
+    if (remain <= 0) return;          // 목표 시각 도달: 0에서 멈춤
+    if (document.hidden) return;      // 화면이 꺼져 있으면 갱신을 쉬고, 다시 켜질 때 재개
+    tickTimer = setTimeout(tick, FRAME_INTERVAL);
   }
 
-  tick();   // 동기화 전에도 기기 시간으로 먼저 표시
+  function startTicking() {
+    if (tickTimer === null) tick();
+  }
+
+  startTicking();   // 동기화 전에도 기기 시간으로 먼저 표시
   sync();
   setInterval(sync, RESYNC_INTERVAL);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) { tick(); sync(); }
+    if (!document.hidden) { startTicking(); sync(); }
   });
 </script>
 </body>
