@@ -251,8 +251,58 @@
   sync();
   setInterval(sync, RESYNC_INTERVAL);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) { tick(); sync(); }
+    if (!document.hidden) { tick(); sync(); checkForUpdate(); }
   });
+
+  /* ───────── 자동 업데이트 ───────── */
+
+  // 배경화면 앱은 한 번 불러온 페이지를 계속 띄워 두므로, 파일을 수정해도 화면이 저절로 바뀌지 않는다.
+  // 서버의 파일이 바뀌었는지 주기적으로 확인하고, 바뀌었으면 새 주소(?v=버전)로 다시 불러온다.
+  // 주소가 달라지면 저장해 둔 예전 사본(캐시)을 쓰지 않고 새 파일을 받아 온다.
+  const UPDATE_CHECK_INTERVAL = 60 * 1000;   // 확인 주기 (ms)
+  const RELOAD_COOLDOWN = 30 * 1000;         // 연속 새로고침 방지 간격 (ms)
+
+  let loadedVersion = new URLSearchParams(location.search).get("v");   // 지금 떠 있는 페이지의 버전
+  let checkingUpdate = false;
+
+  function reloadAs(version) {
+    try {
+      const last = Number(sessionStorage.getItem("lastReload")) || 0;
+      if (Date.now() - last < RELOAD_COOLDOWN) return;
+      sessionStorage.setItem("lastReload", String(Date.now()));
+    } catch (e) { /* 저장소를 못 쓰는 환경: 그대로 진행 */ }
+    location.replace(`${location.pathname}?v=${version}`);
+  }
+
+  async function checkForUpdate() {
+    if (!location.protocol.startsWith("http")) return;   // PC에서 파일로 직접 열었을 때는 건너뜀
+    if (checkingUpdate || document.hidden) return;
+    checkingUpdate = true;
+    try {
+      const res = await fetch(location.pathname, { method: "HEAD", cache: "no-store" });
+      if (!res.ok) return;
+      // 서버가 알려 주는 파일 식별값(ETag). 파일 내용이 바뀌면 이 값도 바뀐다.
+      const latest = (res.headers.get("ETag") || res.headers.get("Last-Modified") || "")
+        .replace(/^W\//, "").replace(/[^\w-]/g, "");
+      if (!latest) return;
+
+      if (loadedVersion === null) {
+        // 버전 표시 없이 열린 경우: 지금 떠 있는 문서의 수정 시각이 서버와 같으면 최신으로 본다.
+        const serverTime = Date.parse(res.headers.get("Last-Modified"));
+        const loadedTime = Date.parse(document.lastModified);
+        if (serverTime && Math.abs(serverTime - loadedTime) < 2000) loadedVersion = latest;
+      }
+      document.documentElement.dataset.version = loadedVersion || "stale";
+      if (latest !== loadedVersion) reloadAs(latest);
+    } catch (e) {
+      /* 네트워크 오류: 다음 확인 때 다시 시도 */
+    } finally {
+      checkingUpdate = false;
+    }
+  }
+
+  checkForUpdate();
+  setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL);
 </script>
 </body>
 </html>
