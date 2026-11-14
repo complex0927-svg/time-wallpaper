@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>휴대폰 배경화면</title>
+
+<!-- 가늘고 둥근 숫자 글꼴(Montserrat Light). 필요한 글자(숫자, 점, 쌍점)만 받아 온다.
+     받아 오지 못하면 기기의 가는 기본 글꼴로 표시된다. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300&amp;text=0123456789.%3A&amp;display=swap">
+
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -13,7 +20,7 @@
     --screen-w: 1440;
     --screen-h: 3120;
     --w: min(100vw, calc(100vh * var(--screen-w) / var(--screen-h)));
-    --scale: 0.5;   /* 카운트다운 전체 크기 배율 (1 = 처음 크기) */
+    --scale: 1;   /* 카운트다운 전체 크기 배율 */
   }
   @supports (height: 100dvh) {
     :root { --w: min(100vw, calc(100dvh * var(--screen-w) / var(--screen-h))); }
@@ -29,10 +36,12 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    font-family: "Pretendard", "Segoe UI", "Malgun Gothic", sans-serif;
+    font-family: "Montserrat", "sans-serif-light", "Roboto", "Segoe UI Light", "Segoe UI", sans-serif;
+    font-weight: 300;
   }
 
   .wallpaper {
+    --size: calc(var(--w) * 0.074 * var(--scale));   /* 카운트다운 숫자의 글자 크기 */
     position: relative;
     width: var(--w);
     height: 100%;
@@ -40,50 +49,35 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: calc(var(--w) * 0.075 * var(--scale));
+    gap: calc(var(--size) * 0.55);
     padding-bottom: calc(var(--w) * 0.2);
     background: #000;
     color: #fff;
   }
 
-  /* --d: 숫자 한 칸의 너비, --dh: 숫자 한 칸의 높이 */
-  .row {
-    --dh: calc(var(--d) * 100 / 56);
-    display: flex;
-    align-items: center;
-    gap: calc(var(--d) * 0.16);
-  }
-  .row.days { --d: calc(var(--w) * 0.16 * var(--scale)); }
-  .row.hms  { --d: calc(var(--w) * 0.095 * var(--scale)); }
-
-  /* 남은 일수 옆의 "일": 숫자와 같은 높이. 글자 크기와 위치는 아래 스크립트(fitUnit)가 맞춘다. */
-  .unit {
-    display: block;
-    height: var(--dh);
-    margin-left: calc(var(--d) * 0.08);
-    overflow: visible;
-  }
-  .unit text {
-    fill: #fff;
-    font-weight: 700;
-  }
-
-  .digits {
+  /* 글자를 한 칸씩 같은 너비로 띄워서 놓는다. 숫자가 바뀌어도 자리가 흔들리지 않는다. */
+  .line {
     display: flex;
     justify-content: center;
-    gap: calc(var(--d) * 0.16);
+    line-height: 1;
+    white-space: nowrap;
   }
-
-  .digit, .colon {
+  .ch {
     display: block;
-    height: var(--dh);
+    width: 0.82em;
+    text-align: center;
   }
-  .digit { width: var(--d); }
-  .colon { width: calc(var(--d) * 22 / 56); }
+  .ch.sep { width: 0.5em; }
 
-  .seg { fill: #fff; opacity: 0; }
-  .seg.on { opacity: 1; }
-  .colon rect { fill: #fff; }
+  /* 위쪽 작은 줄: 목표 날짜 */
+  .date { font-size: calc(var(--size) * 0.6); }
+
+  /* 아래쪽 큰 줄: 남은 일:시:분:초 */
+  .countdown { font-size: var(--size); }
+  .countdown .sep {
+    position: relative;
+    top: -0.07em;   /* 쌍점을 숫자 높이의 가운데로 올림 */
+  }
 
   /* 네이버 서버시간 동기화에 실패했을 때만 표시 */
   .notice {
@@ -92,6 +86,8 @@
     left: 0;
     right: 0;
     text-align: center;
+    font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+    font-weight: 400;
     font-size: calc(var(--w) * 0.028);
     opacity: 0.5;
   }
@@ -100,31 +96,8 @@
 </head>
 <body>
   <div class="wallpaper">
-    <div class="row days">
-      <div class="digits" id="days"></div>
-      <svg class="unit" id="unit" viewBox="0 0 100 100" role="img" aria-label="일">
-        <text x="0" y="88" font-size="100">일</text>
-      </svg>
-    </div>
-
-    <div class="row hms">
-      <div class="digits" id="hours"></div>
-      <svg class="colon" viewBox="0 0 22 100" aria-hidden="true">
-        <rect x="5.5" y="27" width="11" height="11"/>
-        <rect x="5.5" y="62" width="11" height="11"/>
-      </svg>
-      <div class="digits" id="minutes"></div>
-      <svg class="colon" viewBox="0 0 22 100" aria-hidden="true">
-        <rect x="5.5" y="27" width="11" height="11"/>
-        <rect x="5.5" y="62" width="11" height="11"/>
-      </svg>
-      <div class="digits" id="seconds"></div>
-      <svg class="colon" viewBox="0 0 22 100" aria-hidden="true">
-        <rect x="5.5" y="89" width="11" height="11"/>
-      </svg>
-      <div class="digits" id="millis"></div>
-    </div>
-
+    <div class="line date" id="date"></div>
+    <div class="line countdown" id="countdown"></div>
     <div class="notice" id="notice" hidden>네이버 서버시간 동기화 실패 · 기기 시간 기준</div>
   </div>
 
@@ -132,7 +105,10 @@
   /* ───────── 설정 ───────── */
 
   // 카운트다운 목표: 2033년 1월 1일 00:00 (한국 표준시)
-  const TARGET = Date.parse("2033-01-01T00:00:00+09:00");
+  const TARGET_DATE = { year: 2033, month: 1, day: 1 };
+  const KST_OFFSET = 9 * 60 * 60 * 1000;
+  const TARGET =
+    Date.UTC(TARGET_DATE.year, TARGET_DATE.month - 1, TARGET_DATE.day) - KST_OFFSET;
 
   // 네이버 서버시간 출처: 네이버 금융 실시간 API의 응답에 포함된 서버 시각(result.time, 밀리초).
   // 네이버 메인(www.naver.com)은 브라우저 보안 정책(CORS) 때문에 페이지에서 시각을 읽을 수 없어,
@@ -144,117 +120,36 @@
   const SYNC_TIMEOUT = 5000;               // 응답 대기 한도 (ms)
   const RESYNC_INTERVAL = 10 * 60 * 1000;  // 재동기화 주기 (ms)
 
-  /* ───────── 7세그먼트 숫자 ───────── */
+  /* ───────── 글자 줄 표시 ───────── */
 
-  const SVG_NS = "http://www.w3.org/2000/svg";
-  const W = 56, H = 100, T = 11, GAP = 1.2;   // 숫자 한 칸의 크기, 획 두께, 획 사이 간격
+  const pad2 = (n) => String(n).padStart(2, "0");
 
-  const pts = (list) => list.map(([x, y]) => `${x},${y}`).join(" ");
-
-  // 가로 획: 중심 높이 y
-  const hSeg = (y) => pts([
-    [T / 2 + GAP, y], [T + GAP, y - T / 2], [W - T - GAP, y - T / 2],
-    [W - T / 2 - GAP, y], [W - T - GAP, y + T / 2], [T + GAP, y + T / 2],
-  ]);
-
-  // 세로 획: 중심 x, 위쪽 끝 ya ~ 아래쪽 끝 yb
-  const vSeg = (x, ya, yb) => pts([
-    [x, ya + GAP], [x + T / 2, ya + T / 2 + GAP], [x + T / 2, yb - T / 2 - GAP],
-    [x, yb - GAP], [x - T / 2, yb - T / 2 - GAP], [x - T / 2, ya + T / 2 + GAP],
-  ]);
-
-  const SEGMENTS = {
-    a: hSeg(T / 2),
-    b: vSeg(W - T / 2, T / 2, H / 2),
-    c: vSeg(W - T / 2, H / 2, H - T / 2),
-    d: hSeg(H - T / 2),
-    e: vSeg(T / 2, H / 2, H - T / 2),
-    f: vSeg(T / 2, T / 2, H / 2),
-    g: hSeg(H / 2),
-  };
-
-  // 0~9 각 숫자에서 켜지는 획
-  const DIGIT_SEGMENTS = [
-    "abcdef", "bc", "abdeg", "abcdg", "bcfg",
-    "acdfg", "acdefg", "abc", "abcdefg", "abcdfg",
-  ];
-
-  function createDigit() {
-    const svg = document.createElementNS(SVG_NS, "svg");
-    svg.setAttribute("class", "digit");
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    const segs = {};
-    for (const [name, points] of Object.entries(SEGMENTS)) {
-      const p = document.createElementNS(SVG_NS, "polygon");
-      p.setAttribute("class", "seg");
-      p.setAttribute("points", points);
-      svg.appendChild(p);
-      segs[name] = p;
-    }
-    return {
-      el: svg,
-      set(ch) {
-        const on = DIGIT_SEGMENTS[ch] || "";
-        for (const name in segs) segs[name].classList.toggle("on", on.includes(name));
-      },
-    };
-  }
-
-  // 숫자 묶음(일/시/분/초) 하나. 자릿수가 바뀌면 칸 수를 다시 맞춘다.
-  function createGroup(container) {
-    let digits = [];
-    let shown = null;
+  // 문자열을 한 글자씩 칸에 나눠 담는다. 바뀐 글자만 다시 쓴다.
+  function createLine(container) {
+    let cells = [];
     return (text) => {
-      if (text === shown) return;
-      shown = text;
-      if (digits.length !== text.length) {
+      if (cells.length !== text.length) {
         container.textContent = "";
-        digits = Array.from(text, () => {
-          const d = createDigit();
-          container.appendChild(d.el);
-          return d;
+        cells = Array.from(text, () => {
+          const cell = document.createElement("span");
+          container.appendChild(cell);
+          return cell;
         });
       }
-      digits.forEach((d, i) => d.set(text[i]));
+      cells.forEach((cell, i) => {
+        const ch = text[i];
+        if (cell.textContent === ch) return;
+        cell.textContent = ch;
+        cell.className = ch >= "0" && ch <= "9" ? "ch" : "ch sep";
+      });
     };
   }
 
-  const showDays = createGroup(document.getElementById("days"));
-  const showHours = createGroup(document.getElementById("hours"));
-  const showMinutes = createGroup(document.getElementById("minutes"));
-  const showSeconds = createGroup(document.getElementById("seconds"));
-  const showMillis = createGroup(document.getElementById("millis"));
+  const showDate = createLine(document.getElementById("date"));
+  const showCountdown = createLine(document.getElementById("countdown"));
   const noticeEl = document.getElementById("notice");
 
-  /* ───────── "일" 글자 크기 맞춤 ───────── */
-
-  // 글꼴마다 글자가 실제로 그려지는 높이가 다르다(휴대폰과 PC의 기본 글꼴도 다르다).
-  // 그려지는 높이를 직접 재어서, 어떤 글꼴에서도 "일"이 숫자와 정확히 같은 높이가 되게 한다.
-  function fitUnit() {
-    const svg = document.getElementById("unit");
-    const text = svg.querySelector("text");
-    const fontFamily = getComputedStyle(document.body).fontFamily;
-
-    const ctx = document.createElement("canvas").getContext("2d");
-    ctx.font = `700 100px ${fontFamily}`;
-    const m = ctx.measureText(text.textContent);
-    const ascent = m.actualBoundingBoxAscent;     // 기준선 위로 그려지는 높이
-    const descent = m.actualBoundingBoxDescent;   // 기준선 아래로 그려지는 높이
-    const left = m.actualBoundingBoxLeft;
-    const right = m.actualBoundingBoxRight;
-    if (!(ascent + descent > 0) || !(left + right > 0)) return;   // 측정 불가: 기본값 유지
-
-    const k = 100 / (ascent + descent);   // 글자 높이를 숫자 높이(100)에 맞추는 배율
-    const width = (left + right) * k;
-    svg.setAttribute("viewBox", `0 0 ${width} 100`);
-    svg.style.width = `calc(var(--dh) * ${width / 100})`;
-    text.setAttribute("x", left * k);
-    text.setAttribute("y", ascent * k);
-    text.setAttribute("font-size", 100 * k);
-    text.style.fontFamily = fontFamily;
-  }
-
-  fitUnit();
+  showDate(`${TARGET_DATE.year}.${pad2(TARGET_DATE.month)}.${pad2(TARGET_DATE.day)}`);
 
   /* ───────── 네이버 서버시간 동기화 ───────── */
 
@@ -315,41 +210,33 @@
     // 동기화에 한 번도 성공하지 못했으면 기기 시간으로 표시하고 그 사실을 알린다.
     noticeEl.hidden = synced;
     document.documentElement.dataset.timeSource = synced ? "naver" : "device";
-    startTicking();
+    tick();
   }
 
   /* ───────── 카운트다운 표시 ───────── */
 
-  // 밀리초 자리가 계속 바뀌므로 화면을 1초에 약 30번 갱신한다.
-  const FRAME_INTERVAL = 33;
-
-  const pad = (n, width) => String(n).padStart(width, "0");
   let tickTimer = null;
 
   function tick() {
-    tickTimer = null;
-    const remain = Math.max(0, TARGET - (Date.now() + offset));   // 남은 시간 (ms)
+    clearTimeout(tickTimer);
+    const remain = TARGET - (Date.now() + offset);
+    const total = Math.max(0, Math.floor(remain / 1000));   // 남은 시간 (초)
 
-    showDays(String(Math.floor(remain / 86400000)));
-    showHours(pad(Math.floor((remain % 86400000) / 3600000), 2));
-    showMinutes(pad(Math.floor((remain % 3600000) / 60000), 2));
-    showSeconds(pad(Math.floor((remain % 60000) / 1000), 2));
-    showMillis(pad(Math.floor(remain % 1000), 3));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    showCountdown(`${pad2(days)}:${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`);
 
-    if (remain <= 0) return;          // 목표 시각 도달: 0에서 멈춤
-    if (document.hidden) return;      // 화면이 꺼져 있으면 갱신을 쉬고, 다시 켜질 때 재개
-    tickTimer = setTimeout(tick, FRAME_INTERVAL);
+    if (remain <= 0) return;                             // 목표 시각 도달: 0에서 멈춤
+    tickTimer = setTimeout(tick, (remain % 1000) + 10);  // 다음 초가 바뀌는 순간에 맞춰 갱신
   }
 
-  function startTicking() {
-    if (tickTimer === null) tick();
-  }
-
-  startTicking();   // 동기화 전에도 기기 시간으로 먼저 표시
+  tick();   // 동기화 전에도 기기 시간으로 먼저 표시
   sync();
   setInterval(sync, RESYNC_INTERVAL);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) { startTicking(); sync(); }
+    if (!document.hidden) { tick(); sync(); }
   });
 </script>
 </body>
