@@ -81,7 +81,12 @@
   .date { font-size: calc(var(--size) * 0.6); }
 
   /* 아래쪽 큰 줄: 남은 일:시:분:초 */
-  .countdown { font-size: var(--size); }
+  .countdown {
+    --stretch-y: 1.2;   /* 숫자의 세로 길이 배율 (가로 너비는 그대로) */
+    font-size: var(--size);
+    transform: scaleY(var(--stretch-y));
+    transform-origin: center top;   /* 아래쪽으로 늘어나므로 날짜와의 간격은 유지된다 */
+  }
   .countdown .sep {
     position: relative;
     top: -0.07em;   /* 쌍점을 숫자 높이의 가운데로 올림 */
