@@ -42,17 +42,25 @@
 
   .wallpaper {
     --size: calc(var(--w) * 0.074 * var(--scale));   /* 카운트다운 숫자의 글자 크기 */
+    --pos-y: 75%;   /* 카운트다운의 세로 위치: 화면 맨 아래 0% ~ 맨 위 100% */
     position: relative;
     width: var(--w);
     height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: calc(var(--size) * 0.55);
-    padding-bottom: calc(var(--w) * 0.2);
     background: #000;
     color: #fff;
+  }
+
+  /* 날짜 + 카운트다운 묶음. 가로는 가운데, 세로는 --pos-y 높이에 묶음의 중심이 온다. */
+  .clock {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% - var(--pos-y));
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--size) * 0.55);
   }
 
   /* 글자를 한 칸씩 같은 너비로 띄워서 놓는다. 숫자가 바뀌어도 자리가 흔들리지 않는다. */
@@ -96,8 +104,10 @@
 </head>
 <body>
   <div class="wallpaper">
-    <div class="line date" id="date"></div>
-    <div class="line countdown" id="countdown"></div>
+    <div class="clock">
+      <div class="line date" id="date"></div>
+      <div class="line countdown" id="countdown"></div>
+    </div>
     <div class="notice" id="notice" hidden>네이버 서버시간 동기화 실패 · 기기 시간 기준</div>
   </div>
 
