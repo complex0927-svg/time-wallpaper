@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>휴대폰 배경화면</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* 기준 해상도: 갤럭시 S24 Ultra 세로 화면 (가로 1440 × 세로 3120)
+     --w: 이 비율을 유지한 배경화면 너비. 모든 크기는 이 값에 비례한다. */
+  :root {
+    --screen-w: 1440;
+    --screen-h: 3120;
+    --w: min(100vw, calc(100vh * var(--screen-w) / var(--screen-h)));
+  }
+  @supports (height: 100dvh) {
+    :root { --w: min(100vw, calc(100dvh * var(--screen-w) / var(--screen-h))); }
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+  }
+
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: "Pretendard", "Segoe UI", "Malgun Gothic", sans-serif;
+  }
+
+  .wallpaper {
+    position: relative;
+    width: var(--w);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: calc(var(--w) * 0.075);
+    padding-bottom: calc(var(--w) * 0.2);
+    background: #000;
+    color: #fff;
+  }
+
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: calc(var(--d) * 0.16);
+  }
+  .row.days { --d: calc(var(--w) * 0.16); }
+  .row.hms  { --d: calc(var(--w) * 0.095); }
+
+  .digits {
+    display: flex;
+    justify-content: center;
+    gap: calc(var(--d) * 0.16);
+  }
+
+  .digit, .colon {
+    display: block;
+    height: calc(var(--d) * 100 / 56);
+  }
+  .digit { width: var(--d); }
+  .colon { width: calc(var(--d) * 22 / 56); }
+
+  .seg { fill: #fff; opacity: 0; }
+  .seg.on { opacity: 1; }
+  .colon rect { fill: #fff; }
+
+  .label {
+    margin-top: calc(var(--w) * 0.022);
+    text-align: center;
+    font-size: calc(var(--w) * 0.032);
+    letter-spacing: 0.1em;
+    opacity: 0.7;
+  }
+
+  /* 네이버 서버시간 동기화에 실패했을 때만 표시 */
+  .notice {
+    position: absolute;
+    bottom: calc(var(--w) * 0.08);
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: calc(var(--w) * 0.028);
+    opacity: 0.5;
+  }
+  .notice[hidden] { display: none; }
+</style>
+</head>
+<body>
+  <div class="wallpaper">
+    <div class="row days">
+      <div class="group">
+        <div class="digits" id="days"></div>
+        <div class="label">일</div>
+      </div>
+    </div>
+
+    <div class="row hms">
+      <div class="digits" id="hours"></div>
+      <svg class="colon" viewBox="0 0 22 100" aria-hidden="true">
+        <rect x="5.5" y="27" width="11" height="11"/>
+        <rect x="5.5" y="62" width="11" height="11"/>
+      </svg>
+      <div class="digits" id="minutes"></div>
+      <svg class="colon" viewBox="0 0 22 100" aria-hidden="true">
+        <rect x="5.5" y="27" width="11" height="11"/>
+        <rect x="5.5" y="62" width="11" height="11"/>
+      </svg>
+      <div class="digits" id="seconds"></div>
+    </div>
+
+    <div class="notice" id="notice" hidden>네이버 서버시간 동기화 실패 · 기기 시간 기준</div>
+  </div>
+
+<script>
+  /* ───────── 설정 ───────── */
+
+  // 카운트다운 목표: 2033년 1월 1일 00:00 (한국 표준시)
+  const TARGET = Date.parse("2033-01-01T00:00:00+09:00");
+
+  // 네이버 서버시간 출처: 네이버 금융 실시간 API의 응답에 포함된 서버 시각(result.time, 밀리초).
+  // 네이버 메인(www.naver.com)은 브라우저 보안 정책(CORS) 때문에 페이지에서 시각을 읽을 수 없어,
+  // 스크립트 태그(JSONP)로 호출할 수 있는 이 주소를 사용한다.
+  const NAVER_TIME_URL =
+    "https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:005930";
+
+  const SYNC_SAMPLES = 3;                  // 한 번 동기화할 때 측정 횟수 (가장 빠른 응답을 채택)
+  const SYNC_TIMEOUT = 5000;               // 응답 대기 한도 (ms)
+  const RESYNC_INTERVAL = 10 * 60 * 1000;  // 재동기화 주기 (ms)
+
+  /* ───────── 7세그먼트 숫자 ───────── */
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const W = 56, H = 100, T = 11, GAP = 1.2;   // 숫자 한 칸의 크기, 획 두께, 획 사이 간격
+
+  const pts = (list) => list.map(([x, y]) => `${x},${y}`).join(" ");
+
+  // 가로 획: 중심 높이 y
+  const hSeg = (y) => pts([
+    [T / 2 + GAP, y], [T + GAP, y - T / 2], [W - T - GAP, y - T / 2],
+    [W - T / 2 - GAP, y], [W - T - GAP, y + T / 2], [T + GAP, y + T / 2],
+  ]);
+
+  // 세로 획: 중심 x, 위쪽 끝 ya ~ 아래쪽 끝 yb
+  const vSeg = (x, ya, yb) => pts([
+    [x, ya + GAP], [x + T / 2, ya + T / 2 + GAP], [x + T / 2, yb - T / 2 - GAP],
+    [x, yb - GAP], [x - T / 2, yb - T / 2 - GAP], [x - T / 2, ya + T / 2 + GAP],
+  ]);
+
+  const SEGMENTS = {
+    a: hSeg(T / 2),
+    b: vSeg(W - T / 2, T / 2, H / 2),
+    c: vSeg(W - T / 2, H / 2, H - T / 2),
+    d: hSeg(H - T / 2),
+    e: vSeg(T / 2, H / 2, H - T / 2),
+    f: vSeg(T / 2, T / 2, H / 2),
+    g: hSeg(H / 2),
+  };
+
+  // 0~9 각 숫자에서 켜지는 획
+  const DIGIT_SEGMENTS = [
+    "abcdef", "bc", "abdeg", "abcdg", "bcfg",
+    "acdfg", "acdefg", "abc", "abcdefg", "abcdfg",
+  ];
+
+  function createDigit() {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "digit");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const segs = {};
+    for (const [name, points] of Object.entries(SEGMENTS)) {
+      const p = document.createElementNS(SVG_NS, "polygon");
+      p.setAttribute("class", "seg");
+      p.setAttribute("points", points);
+      svg.appendChild(p);
+      segs[name] = p;
+    }
+    return {
+      el: svg,
+      set(ch) {
+        const on = DIGIT_SEGMENTS[ch] || "";
+        for (const name in segs) segs[name].classList.toggle("on", on.includes(name));
+      },
+    };
+  }
+
+  // 숫자 묶음(일/시/분/초) 하나. 자릿수가 바뀌면 칸 수를 다시 맞춘다.
+  function createGroup(container) {
+    let digits = [];
+    let shown = null;
+    return (text) => {
+      if (text === shown) return;
+      shown = text;
+      if (digits.length !== text.length) {
+        container.textContent = "";
+        digits = Array.from(text, () => {
+          const d = createDigit();
+          container.appendChild(d.el);
+          return d;
+        });
+      }
+      digits.forEach((d, i) => d.set(text[i]));
+    };
+  }
+
+  const showDays = createGroup(document.getElementById("days"));
+  const showHours = createGroup(document.getElementById("hours"));
+  const showMinutes = createGroup(document.getElementById("minutes"));
+  const showSeconds = createGroup(document.getElementById("seconds"));
+  const noticeEl = document.getElementById("notice");
+
+  /* ───────── 네이버 서버시간 동기화 ───────── */
+
+  let offset = 0;        // 네이버 서버시간 − 기기 시간 (ms)
+  let synced = false;    // 한 번이라도 동기화에 성공했는지
+  let syncing = false;
+  let callbackSeq = 0;
+
+  // 네이버 서버시간을 한 번 측정해 { offset, rtt }를 돌려준다.
+  function measureNaverTime() {
+    return new Promise((resolve, reject) => {
+      const cbName = "naverTimeCb" + (callbackSeq++);
+      const script = document.createElement("script");
+      let settled = false;
+
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        window[cbName] = () => {};   // 늦게 도착한 응답은 무시
+        script.remove();
+        error ? reject(error) : resolve(value);
+      };
+
+      const startedAt = performance.now();
+      const timeout = setTimeout(() => finish(new Error("timeout")), SYNC_TIMEOUT);
+
+      window[cbName] = (data) => {
+        const rtt = performance.now() - startedAt;
+        const serverMs = data && data.result && data.result.time;
+        if (typeof serverMs !== "number") return finish(new Error("no time in response"));
+        // 응답이 오는 데 걸린 시간의 절반만큼 서버 시각이 지났다고 보고 보정한다.
+        finish(null, { offset: serverMs + rtt / 2 - Date.now(), rtt });
+      };
+
+      script.onerror = () => finish(new Error("request failed"));
+      script.src = `${NAVER_TIME_URL}&_callback=${cbName}&_=${Date.now()}`;
+      document.head.appendChild(script);
+    });
+  }
+
+  async function sync() {
+    if (syncing) return;
+    syncing = true;
+    let best = null;
+    for (let i = 0; i < SYNC_SAMPLES; i++) {
+      try {
+        const sample = await measureNaverTime();
+        if (!best || sample.rtt < best.rtt) best = sample;
+      } catch (e) { /* 다음 측정으로 넘어감 */ }
+    }
+    syncing = false;
+
+    if (best) {
+      offset = best.offset;
+      synced = true;
+    }
+    // 동기화에 한 번도 성공하지 못했으면 기기 시간으로 표시하고 그 사실을 알린다.
+    noticeEl.hidden = synced;
+    document.documentElement.dataset.timeSource = synced ? "naver" : "device";
+    tick();
+  }
+
+  /* ───────── 카운트다운 표시 ───────── */
+
+  const pad2 = (n) => String(n).padStart(2, "0");
+  let tickTimer = null;
+
+  function tick() {
+    clearTimeout(tickTimer);
+    const remain = TARGET - (Date.now() + offset);
+    const total = Math.max(0, Math.floor(remain / 1000));
+
+    showDays(String(Math.floor(total / 86400)));
+    showHours(pad2(Math.floor((total % 86400) / 3600)));
+    showMinutes(pad2(Math.floor((total % 3600) / 60)));
+    showSeconds(pad2(total % 60));
+
+    if (remain <= 0) return;                             // 목표 시각 도달: 0에서 멈춤
+    tickTimer = setTimeout(tick, (remain % 1000) + 10);  // 다음 초가 바뀌는 순간에 맞춰 갱신
+  }
+
+  tick();   // 동기화 전에도 기기 시간으로 먼저 표시
+  sync();
+  setInterval(sync, RESYNC_INTERVAL);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) { tick(); sync(); }
+  });
+</script>
+</body>
+</html>
